@@ -5,7 +5,6 @@ from pydantic import BaseModel
 
 app = FastAPI()
 
-# Schema for incoming Auth data (Day 3)
 class AuthModel(BaseModel):
     email: str
     password: str
@@ -17,7 +16,6 @@ def read_root():
 @app.get("/gigs")
 def get_gigs():
     try:
-        # Note: Keeps 'tittle' column to perfectly match your database schema
         response = supabase.table("gigs").select("id, tittle, description, price").execute()
         return {"gigs": response.data}
     except Exception as e:
@@ -27,7 +25,7 @@ def get_gigs():
 def create_gig(title: str, description: str, price: int):
     try:
         new_gig = {
-            "tittle": title,  # Keeps 'tittle' exactly as it is in your database table
+            "tittle": title,
             "description": description,
             "price": price
         }
@@ -44,8 +42,6 @@ def health_check():
 def create_proposal(job_post: str):
     proposal = generate_proposal(job_post)
     return {"proposal": proposal}
-
-# --- Day 3 Authentication Endpoints ---
 
 @app.post("/api/auth/signup")
 def signup(data: AuthModel):
