@@ -1,5 +1,6 @@
 import google.generativeai as genai
 import os
+import json
 
 # Configure the Gemini API client
 genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
@@ -26,15 +27,26 @@ def optimize_gig(title: str, description: str) -> str:
     response = model.generate_content(prompt)
     return response.text
 
-# 3. Profile Analyzer Function
-def analyze_profile(profile_text: str) -> str:
+# 3. Improved Day 5 Profile Analyzer Function (Guarantees JSON output)
+def analyze_profile(profile_text: str) -> dict:
     prompt = (
-        "You are a professional career coach. "
-        f"Analyze this freelancer profile text:\n{profile_text}\n\n"
-        "Provide constructive feedback on: \n"
-        "1. Strengths\n"
-        "2. Areas of improvement\n"
-        "3. Recommended skills or wording adjustments to attract high-paying clients."
+        "You are an expert career coach. Analyze the following freelancer profile description. "
+        "You must evaluate it and output a JSON object containing the evaluation. "
+        "The JSON object must strictly match this exact format:\n\n"
+        "{\n"
+        "  \"score\": 8,\n"
+        "  \"strengths\": [\"Strength point 1\", \"Strength point 2\"],\n"
+        "  \"weaknesses\": [\"Weakness point 1\", \"Weakness point 2\"],\n"
+        "  \"suggestions\": [\"Suggestion point 1\", \"Suggestion point 2\"]\n"
+        "}\n\n"
+        f"Profile description to analyze:\n{profile_text}"
     )
-    response = model.generate_content(prompt)
-    return response.text
+    
+    # We configure generation_config to force Gemini to output a valid JSON string
+    response = model.generate_content(
+        prompt,
+        generation_config={"response_mime_type": "application/json"}
+    )
+    
+    # Parse the raw text string returned by Gemini into a clean Python dictionary
+    return json.loads(response.text)

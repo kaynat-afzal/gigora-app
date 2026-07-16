@@ -75,6 +75,7 @@ def optimize_gig_endpoint(data: SEORequest):
 @app.post("/api/profile")
 def analyze_profile_endpoint(data: ProfileRequest):
     try:
+        # This will now receive a dictionary directly!
         analysis = analyze_profile(data.profile_text)
         return {"analysis": analysis}
     except Exception as e:
