@@ -1,13 +1,28 @@
 from fastapi import FastAPI, HTTPException
-from ai_service import generate_proposal
+from ai_service import generate_proposal, optimize_gig, analyze_profile
 from database import supabase
 from pydantic import BaseModel
 
 app = FastAPI()
 
+# --- Pydantic Data Models (Defined first so they are recognized below) ---
+
 class AuthModel(BaseModel):
     email: str
     password: str
+
+class ProposalRequest(BaseModel):
+    job_post: str
+
+class SEORequest(BaseModel):
+    title: str
+    description: str
+
+class ProfileRequest(BaseModel):
+    profile_text: str
+
+
+# --- Core App Endpoints ---
 
 @app.get("/")
 def read_root():
@@ -25,7 +40,7 @@ def get_gigs():
 def create_gig(title: str, description: str, price: int):
     try:
         new_gig = {
-            "tittle": title,
+            "tittle": title,  # Matches 'tittle' column in your Supabase DB
             "description": description,
             "price": price
         }
@@ -38,10 +53,35 @@ def create_gig(title: str, description: str, price: int):
 def health_check():
     return {"status": "ok", "message": "Gigora API is running perfectly"}
 
-@app.post("/generate-proposal")
-def create_proposal(job_post: str):
-    proposal = generate_proposal(job_post)
-    return {"proposal": proposal}
+
+# --- Day 4 AI Engine Endpoints ---
+
+@app.post("/api/proposal")
+def create_proposal(data: ProposalRequest):
+    try:
+        proposal = generate_proposal(data.job_post)
+        return {"proposal": proposal}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/seo")
+def optimize_gig_endpoint(data: SEORequest):
+    try:
+        optimized_result = optimize_gig(data.title, data.description)
+        return {"optimized": optimized_result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/profile")
+def analyze_profile_endpoint(data: ProfileRequest):
+    try:
+        analysis = analyze_profile(data.profile_text)
+        return {"analysis": analysis}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# --- Day 3 Authentication Endpoints ---
 
 @app.post("/api/auth/signup")
 def signup(data: AuthModel):
