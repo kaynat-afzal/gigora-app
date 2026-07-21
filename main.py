@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware  # <-- Add this import
 from ai_service import generate_proposal, optimize_gig, analyze_profile
-from database import supabase
+from database import supabase, get_stats
 from pydantic import BaseModel
 
 app = FastAPI(title="Gigora API")
@@ -21,6 +21,10 @@ class AuthModel(BaseModel):
 
 class ProposalRequest(BaseModel):
     job_post: str
+    tone: str = "professional"
+    skill: str = "Web Dev"
+    platform: str = "Upwork"
+    length: str = "medium"
 
 class SEORequest(BaseModel):
     title: str
@@ -68,7 +72,12 @@ def health_check():
 def create_proposal(data: ProposalRequest):
     try:
         # 1. Generate the proposal using Gemini
-        proposal = generate_proposal(data.job_post)
+        proposal = generate_proposal(
+    job_post=data.job_post,
+    tone=data.tone,
+    skill=data.skill,
+    platform=data.platform,
+    length=data.length)
         
         # 2. Save the details directly to the Supabase 'proposals' table
         supabase.table("proposals").insert({
@@ -82,13 +91,17 @@ def create_proposal(data: ProposalRequest):
         # Proper error handling: returns a clean, descriptive message
         raise HTTPException(status_code=500, detail=f"Database or AI Error: {str(e)}")
 
+from pydantic import BaseModel
+
+# Request body model
+class SEORequest(BaseModel):
+    title: str
+    description: str
+    category: str = "General"
+
 @app.post("/api/seo")
-def optimize_gig_endpoint(data: SEORequest):
-    try:
-        optimized_result = optimize_gig(data.title, data.description)
-        return {"optimized": optimized_result}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+def handle_seo_optimization(data: SEORequest):
+    return optimize_gig(data.title, data.description, data.category)
 
 @app.post("/api/profile")
 def analyze_profile_endpoint(data: ProfileRequest):
@@ -123,3 +136,25 @@ def login(data: AuthModel):
         return {"message": "Login successful!", "session": response.session}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+@app.get("/api/history")
+def get_user_history(user_id: str):
+    try:
+        response = supabase.table("history").select("*").eq("user_id", user_id).order("created_at", desc=True).limit(20).execute()
+        return {"history": response.data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/api/history/{item_id}")
+def delete_history_item(item_id: int):
+    try:
+        supabase.table("history").delete().eq("id", item_id).execute()
+        return {"message": "History item deleted successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/stats")
+def get_user_stats(user_id: str):
+    try:
+        return get_stats(user_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

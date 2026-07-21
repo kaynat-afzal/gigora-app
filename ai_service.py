@@ -25,11 +25,33 @@ def get_working_model():
     raise Exception("All API keys exhausted - add more keys")
 
 # 1. Proposal Generator Function
-def generate_proposal(job_post: str) -> str:
+def generate_proposal(job_post: str, tone: str = "professional", skill: str = "Web Dev", platform: str = "Upwork", length: str = "medium") -> dict:
     model = get_working_model()
-    prompt = f"You are an expert freelancer proposal writer. Write a professional, personalized proposal for: {job_post}"
+    
+    # Word count mapping
+    word_limits = {"short": 100, "medium": 200, "long": 300}
+    target_words = word_limits.get(length.lower(), 200)
+    
+    example = """Hi, I reviewed your project carefully. As an expert with 3 years of experience in this field, I can deliver exactly what you need within your timeline."""
+    
+    prompt = f"""You are an expert {skill} freelancer on {platform}.
+Write a {tone} proposal under {target_words} words. Sound human, not robotic.
+
+Example of a good proposal:
+{example}
+
+Job post: {job_post}
+
+Return JSON only:
+{{
+  "proposal": "proposal text here",
+  "word_count": 180,
+  "key_points": ["point1", "point2", "point3"]
+}}"""
+
     response = model.generate_content(prompt)
-    return response.text
+    raw_text = response.text.replace("```json", "").replace("```", "").strip()
+    return json.loads(raw_text)
 
 # 2. SEO Gig Optimizer Function
 def optimize_gig(title: str, description: str, category: str = "General") -> dict:
