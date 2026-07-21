@@ -1,10 +1,18 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware  # <-- Add this import
 from ai_service import generate_proposal, optimize_gig, analyze_profile
 from database import supabase
 from pydantic import BaseModel
 
-app = FastAPI()
-
+app = FastAPI(title="Gigora API")
+# Enable CORS so the React frontend can talk to your backend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows all frontend development servers (like http://localhost:3000)
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 # --- Pydantic Data Models (Defined first so they are recognized below) ---
 
 class AuthModel(BaseModel):
@@ -59,10 +67,20 @@ def health_check():
 @app.post("/api/proposal")
 def create_proposal(data: ProposalRequest):
     try:
+        # 1. Generate the proposal using Gemini
         proposal = generate_proposal(data.job_post)
+        
+        # 2. Save the details directly to the Supabase 'proposals' table
+        supabase.table("proposals").insert({
+            "job_post": data.job_post,
+            "proposal": proposal
+        }).execute()
+        
+        # 3. Return the proposal to the frontend
         return {"proposal": proposal}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        # Proper error handling: returns a clean, descriptive message
+        raise HTTPException(status_code=500, detail=f"Database or AI Error: {str(e)}")
 
 @app.post("/api/seo")
 def optimize_gig_endpoint(data: SEORequest):
