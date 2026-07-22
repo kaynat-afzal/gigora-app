@@ -1,8 +1,9 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware  # <-- Add this import
 from ai_service import generate_proposal, optimize_gig, analyze_profile
-from database import supabase, get_stats
+from database import supabase, get_stats, check_and_increment_usage
 from pydantic import BaseModel
+from datetime import date
 
 app = FastAPI(title="Gigora API")
 # Enable CORS so the React frontend can talk to your backend
@@ -156,5 +157,18 @@ def delete_history_item(item_id: int):
 def get_user_stats(user_id: str):
     try:
         return get_stats(user_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+@app.get("/api/usage")
+def get_user_usage(user_id: str, plan: str = "free"):
+    try:
+        today = str(date.today())
+        result = supabase.table("usage").select("count").eq("user_id", user_id).eq("date", today).execute()
+        current = result.data[0]["count"] if result.data else 0
+
+        if plan == "pro":
+            return {"remaining": 999, "used": current, "limit": "unlimited"}
+
+        return {"remaining": max(0, 5 - current), "used": current, "limit": 5}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
