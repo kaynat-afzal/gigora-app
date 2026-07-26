@@ -1,9 +1,10 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware  # <-- Add this import
 from ai_service import generate_proposal, optimize_gig, analyze_profile
 from database import supabase, get_stats, check_and_increment_usage
 from pydantic import BaseModel
 from datetime import date
+from pydantic import BaseModel
 
 app = FastAPI(title="Gigora API")
 # Enable CORS so the React frontend can talk to your backend
@@ -66,11 +67,40 @@ def create_gig(title: str, description: str, price: int):
 def health_check():
     return {"status": "ok", "message": "Gigora API is running perfectly"}
 
-
+async def get_current_user(authorization: str = Header(None)):
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Not logged in")
+    
+    token = authorization.replace("Bearer ", "")
+    try:
+        user_resp = supabase.auth.get_user(token)
+        user_id = user_resp.user.id
+        
+        # Get user details from profiles table
+        user_data = supabase.table("profiles").select("*").eq("id", user_id).execute()
+        
+        if user_data.data:
+            return user_data.data[0]
+        
+        # Fallback if profile row doesn't exist yet
+        return {"id": user_id, "email": user_resp.user.email, "plan": "free"}
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
 # --- Day 4 AI Engine Endpoints ---
 
 @app.post("/api/proposal")
-def create_proposal(data: ProposalRequest):
+def create_proposal(data: ProposalRequest, current_user: dict = Depends(get_current_user)):
+    user_id = current_user.get("id")
+    plan = current_user.get("plan", "free")
+    
+    usage = check_and_increment_usage(user_id, plan)
+    if not usage["allowed"]:
+        raise HTTPException(status_code=429, detail="Daily limit reached! Upgrade to Pro.")
+
+    # ... rest of your proposal generation code ...
+
+    # --- 2. YOUR EXISTING AI CODE ---
+    
     try:
         # 1. Generate the proposal using Gemini
         proposal = generate_proposal(
@@ -91,8 +121,6 @@ def create_proposal(data: ProposalRequest):
     except Exception as e:
         # Proper error handling: returns a clean, descriptive message
         raise HTTPException(status_code=500, detail=f"Database or AI Error: {str(e)}")
-
-from pydantic import BaseModel
 
 # Request body model
 class SEORequest(BaseModel):
@@ -170,5 +198,21 @@ def get_user_usage(user_id: str, plan: str = "free"):
             return {"remaining": 999, "used": current, "limit": "unlimited"}
 
         return {"remaining": max(0, 5 - current), "used": current, "limit": 5}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+@app.get("/api/me")
+def get_user_profile(current_user: dict = Depends(get_current_user)):
+    try:
+        user_id = current_user.get("id")
+        plan = current_user.get("plan", "free")
+        
+        # Get stats/usage
+        usage = check_and_increment_usage(user_id, plan)
+        
+        return {
+            "user": current_user,
+            "usage": usage
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
