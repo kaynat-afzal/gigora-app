@@ -111,3 +111,15 @@ def analyze_profile(profile_text: str) -> dict:
     
     # Parse the raw text string returned by Gemini into a clean Python dictionary
     return json.loads(response.text)
+def generate_proposal(job_post: str, tone: str = "professional", skill: str = "", platform: str = "Fiverr", length: str = "medium") -> str:
+    prompt = f"Write a {tone} proposal for {platform}..."
+    
+    # WRAP THE CALL IN TRY-EXCEPT INSIDE THE FUNCTION
+    try:
+        model = get_working_model()
+        response = model.generate_content(prompt)
+        return response.text
+    except Exception as e:
+        if "429" in str(e) or "ResourceExhausted" in str(e):
+            raise Exception("Gemini rate limit exceeded. Please try again in a few moments.")
+        raise Exception(f"AI Generation Failed: {str(e)}")

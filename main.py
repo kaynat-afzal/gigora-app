@@ -1,4 +1,8 @@
-from fastapi import FastAPI, HTTPException, Depends, Header
+import re
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from fastapi import FastAPI, HTTPException, Depends, Header, Request
 from fastapi.middleware.cors import CORSMiddleware  # <-- Add this import
 from ai_service import generate_proposal, optimize_gig, analyze_profile
 from database import supabase, get_stats, check_and_increment_usage
@@ -15,6 +19,26 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# --- RATE LIMITER SETUP ---
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# --- INPUT SANITIZER HELPER ---
+def sanitize(text: str) -> str:
+    if not text:
+        raise HTTPException(status_code=400, detail="Input cannot be empty")
+    
+    # 1. Remove HTML tags
+    clean = re.sub(r'<[^>]+>', '', text)
+    clean = clean.strip()
+    
+    # 2. Length validation
+    if len(clean) < 10:
+        raise HTTPException(status_code=400, detail="Input too short (minimum 10 characters required)")
+        
+    # 3. Limit to 2000 characters
+    return clean[:2000]
 # --- Pydantic Data Models (Defined first so they are recognized below) ---
 
 class AuthModel(BaseModel):
@@ -89,13 +113,43 @@ async def get_current_user(authorization: str = Header(None)):
 # --- Day 4 AI Engine Endpoints ---
 
 @app.post("/api/proposal")
-def create_proposal(data: ProposalRequest, current_user: dict = Depends(get_current_user)):
+@limiter.limit("20/minute")
+def create_proposal(
+    request: Request, 
+    data: ProposalRequest, 
+    current_user: dict = Depends(get_current_user)
+):
     user_id = current_user.get("id")
     plan = current_user.get("plan", "free")
     
+    # 1. Sanitize user input
+    clean_job_post = sanitize(data.job_post)
+
+    # 2. Check daily free limit
     usage = check_and_increment_usage(user_id, plan)
     if not usage["allowed"]:
-        raise HTTPException(status_code=429, detail="Daily limit reached! Upgrade to Pro.")
+        raise HTTPException(status_code=429, detail="Daily limit reached! Upgrade to Pro for unlimited access.")
+
+    # 3. Call AI Service
+    try:
+        proposal = generate_proposal(
+            job_post=clean_job_post,
+            tone=data.tone,
+            skill=data.skill,
+            platform=data.platform,
+            length=data.length
+        )
+
+        supabase.table("proposals").insert({
+            "job_post": clean_job_post,
+            "proposal": proposal
+        }).execute()
+
+        return {"proposal": proposal}
+
+    except Exception as e:
+        # Proper 500 status code for internal or Gemini errors
+        raise HTTPException(status_code=500, detail=f"AI service error: {str(e)}")
 
     # ... rest of your proposal generation code ...
 
@@ -129,11 +183,21 @@ class SEORequest(BaseModel):
     category: str = "General"
 
 @app.post("/api/seo")
-def handle_seo_optimization(data: SEORequest):
+def handle_seo_optimization(data: SEORequest, current_user: dict = Depends(get_current_user)):
+    user_id = current_user.get("id")
+    plan = current_user.get("plan", "free")
+    
+    # 1. Check usage
+    usage = check_and_increment_usage(user_id, plan)
+    if not usage["allowed"]:
+        raise HTTPException(status_code=429, detail="Daily free limit reached! Upgrade to Pro.")
+        
+    # 2. Run existing optimization function
     return optimize_gig(data.title, data.description, data.category)
 
 @app.post("/api/profile")
-def analyze_profile_endpoint(data: ProfileRequest):
+def analyze_profile_endpoint(data: ProfileRequest, current_user: dict = Depends(get_current_user)):
+    user_id = current_user.get("id")
     try:
         # This will now receive a dictionary directly!
         analysis = analyze_profile(data.profile_text)
